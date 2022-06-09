@@ -10,7 +10,10 @@
   "author": "Ailton Ferreira Luz <djailtim@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@faker-js/faker": "^7.1.0"
+    "@faker-js/faker": "^7.1.0",
+    "dotenv": "^16.0.1",
+    "knex": "^2.1.0",
+    "pg": "^8.7.3"
   },
   "devDependencies": {
     "nodemon": "^2.0.16"

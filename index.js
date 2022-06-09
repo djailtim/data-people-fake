@@ -1,7 +1,27 @@
+require('dotenv').config();
+
 const fs = require('fs')
 const { faker } = require('@faker-js/faker')
 
+const knex = require('knex')({
+    client: 'pg',
+    connection: {
+        host: process.env.PSQL_HOSTNAME,
+        database: process.env.PSQL_DATABASE,
+        user: process.env.PSQL_USERNAME,
+        password: process.env.PSQL_PASSWORD
+    }
+});
+
 faker.setLocale('pt_BR')
+
+function unique(array) {
+    return array.reduce((acc, curr) => {
+        if (acc.includes(curr)) { return acc; }
+
+        return acc.concat(curr);
+    }, []);
+}
 
 class User {
     constructor(userData = {}) {
@@ -9,6 +29,8 @@ class User {
 
         this.name = userData.name || faker.name.findName();
         this.company = userData.company || faker.company.companyName();
+        this.position = userData.position || faker.name.findName();
+
         this.birthdate = userData.birthdate || faker.date.birthdate();
         this.jobType = userData.jobType || faker.name.jobType();
         this.phoneNumber = userData.phoneNumber || faker.phone.phoneNumber();
@@ -77,6 +99,36 @@ class UserFiles {
         await fs.promises.writeFile(filepath, csv);
     }
 
+    async saveCollaborators() {
+        const companyNames = unique(this.users.map((u) => u.company))
+            .map((name) => ({ name }));
+
+        const workPositionNames = unique(this.users.map((u) => u.position))
+            .map((name) => ({ name }));
+
+        const companiesInDb = await knex('companies')
+            .insert(companyNames)
+            .onConflict('name')
+            .merge()
+            .returning('*');
+
+        const workPositionsInDb = await knex('working_positions')
+            .insert(workPositionNames)
+            .returning('*');
+
+        await knex('collaborators').insert(this.users.map((u) => ({
+            company_id: companiesInDb
+                .find((c) => c.name === u.company).id,
+
+            working_position_id: workPositionsInDb
+                .find((w) => w.name === u.position).id,
+
+            name: u.name,
+            email: u.email,
+            cellphone: u.phoneNumber
+        })));
+    }
+
     createUser() {
         const user = new User();
         this.users.push(user);
@@ -92,6 +144,7 @@ function userFactory(userFiles, maxUsers = 1) {
 }
 
 (async () => {
+    console.log('Started!');
     const userFiles = new UserFiles();
     await userFiles.loadFromFile('./users.json');
 
@@ -99,4 +152,23 @@ function userFactory(userFiles, maxUsers = 1) {
 
     await userFiles.writeJson('./users.json');
     await userFiles.writeCsv('./users.csv');
+
+    await userFiles.saveCollaborators();
+    console.log('Done!');
+
+    knex.destroy();
 })();
+
+// SELECT
+//     c.id,
+//     c.name,
+//     company.name as company_name,
+//     wp.name as working_position_name
+// FROM
+//     collaborators as c
+// INNER JOIN
+//     companies as company
+//         ON company.id = c.company_id
+// INNER JOIN
+//     working_positions as wp
+//         ON wp.id = c.working_position_id;
