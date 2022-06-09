@@ -1,62 +1,102 @@
 const fs = require('fs')
 const { faker } = require('@faker-js/faker')
 
-const data = './fake.json'
-
 faker.setLocale('pt_BR')
 
-const user = () => ({
-  name: faker.name.findName(),
-  company: faker.company.companyName(),
-  birthdate: faker.date.birthdate(),
-  jobType: faker.name.jobType(),
-  phoneNumber: faker.phone.phoneNumber(),
-  address: {
-    streetAddress: faker.address.streetAddress(),
-    city: faker.address.city(),
-    state: faker.address.state()
-  }
-})
+class User {
+    constructor(userData = {}) {
+        this.id = userData.id || parseInt(Math.random() * 1000);
 
-const users = []
+        this.name = userData.name || faker.name.findName();
+        this.company = userData.company || faker.company.companyName();
+        this.birthdate = userData.birthdate || faker.date.birthdate();
+        this.jobType = userData.jobType || faker.name.jobType();
+        this.phoneNumber = userData.phoneNumber || faker.phone.phoneNumber();
 
-for (let i = 0; i < 10; i++) {
-  const createdUser = user()
-  users.push(createdUser)
+        this.address = userData.address || {
+            streetAddress: faker.address.streetAddress(),
+            city: faker.address.city(),
+            state: faker.address.state()
+        };
+    }
+
+    toCSV() {
+        const { streetAddress, city, state } = this.address;
+
+        return `${[
+            this.id,
+            this.name,
+            this.company,
+            this.birthdate,
+            this.jobType,
+            this.phoneNumber,
+            `${streetAddress}, ${city} - ${state}`
+        ].join(';')}\n`;
+    }
 }
 
-try {
-  const contentData = fs.readFileSync(data)
-  const contentDataParsed = JSON.parse(contentData)
+class UserFiles {
+    constructor(users = []) {
+        this.users = users;
+    }
 
-  const newGroupUsers = contentDataParsed
-    ? [...contentDataParsed, ...users]
-    : [...users]
+    async loadFromFile(filepath) {
+        try {
+            await fs.promises.stat(filepath);
+        } catch (ex) {
+            if (ex.code === 'ENOENT') {
+                await fs.promises.writeFile(filepath, '[]');
+            } else {
+                throw ex;
+            }
+        }
 
-  fs.writeFileSync(data, JSON.stringify(newGroupUsers))
-  console.log(
-    `Foram inseridos ${users.length}, totalizando ${newGroupUsers.length} registros!`
-  )
-  console.table(newGroupUsers, ['name', 'birthdate'])
+        const fileResponse = await fs.promises.readFile(filepath);
+        this.users = JSON.parse(fileResponse).map((u) => new User(u));
+    }
 
-  const dataCSV = newGroupUsers.map((user) => {
-    const id = parseInt(Math.random() * 1000)
-    const name = user.name
-    const birth = new Intl.DateTimeFormat('pt-BR').format(
-      new Date(user.birthdate)
-    )
-    const company = user.company
-    const jobType = user.jobType
-    const phoneNumber = user.phoneNumber
-    const address = `${user.address.streetAddress}, ${user.address.city} - ${user.address.state}`
+    async writeJson(filepath) {
+        await fs.promises.writeFile(
+            filepath,
+            JSON.stringify(this.users, undefined, 4)
+        );
+    }
 
-    return `${id};${name};${company};${birth};${jobType};${phoneNumber};${address}\\r\\n`
-  })
+    async writeCsv(filepath) {
+        const title = `${[
+            'Id',
+            'Nome',
+            'Empresa',
+            'Nascimento',
+            'Funcao',
+            'Telefone',
+            'Endereco'
+        ].join(';')}\n`;
 
-  let csvString = dataCSV.toString()
+        const csv = title + this.users.map((u) => u.toCSV()).join('');
+        await fs.promises.writeFile(filepath, csv);
+    }
 
-  fs.writeFileSync('./fake.csv', csvString)
-  console.log('Arquivo CSV exportado com sucesso!')
-} catch (error) {
-  console.error(error)
+    createUser() {
+        const user = new User();
+        this.users.push(user);
+
+        return user;
+    }
 }
+
+function userFactory(userFiles, maxUsers = 1) {
+    for (let i = 0; i < maxUsers; ++i) {
+        userFiles.createUser();
+    }
+}
+
+(async () => {
+    const userFiles = new UserFiles();
+    await userFiles.loadFromFile('./users.json');
+
+    userFactory(userFiles, 10);
+
+    await userFiles.writeJson('./users.json');
+    await userFiles.writeCsv('./users.csv');
+})();
